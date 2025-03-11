@@ -6,6 +6,7 @@ from pathlib import Path
 import cv2
 import speech_recognition as sr
 from moviepy import VideoFileClip
+from tqdm import tqdm
 
 
 def extract_audio_from_video(src_path: Path, dst_dir: Path) -> Path:
@@ -87,6 +88,23 @@ def extract_frames(src_path, dst_dir: Path, fps: int = 5):
     print(f"Extracted {frame_count} frames")
 
 
+def split_modalities(src_path: Path, dst_dir: Path, fps: int = 5):
+    """Split a video file into its modalities: audio, text, and frames.
+
+    Args:
+        video_path: Path to the input video file.
+        dst_dir: Path to the output directory where modalities will be saved.
+        fps: Number of frames per second to extract from the video.
+    """
+    tqdm.write(f"Processing {src_path.name}...")
+    video_dst = dst_dir / src_path.stem
+    video_dst.mkdir(parents=True, exist_ok=True)
+
+    audio_path = extract_audio_from_video(src_path, video_dst)
+    extract_text(audio_path, video_dst)
+    extract_frames(src_path, video_dst, fps)
+
+
 def run() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("src", type=Path, help="Path to the input video")
@@ -96,9 +114,11 @@ def run() -> None:
 
     args.dst.mkdir(parents=True, exist_ok=True)
 
-    audio_path = extract_audio_from_video(args.src, args.dst)
-    extract_text(audio_path, args.dst)
-    extract_frames(args.src, args.dst, args.fps)
+    if args.src.is_dir():
+        for video_file in tqdm(list(args.src.glob("*.mp4")), desc="Processing Videos", unit="video"):
+            split_modalities(video_file, args.dst, args.fps)
+    else:
+        split_modalities(args.src, args.dst, args.fps)
 
 
 if __name__ == "__main__":

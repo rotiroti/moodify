@@ -323,6 +323,7 @@ dependencies = [
     { name = "moviepy" },
     { name = "opencv-python" },
     { name = "speechrecognition" },
+    { name = "tqdm" },
 ]
 
 [package.dev-dependencies]
@@ -336,6 +337,7 @@ requires-dist = [
     { name = "moviepy", specifier = ">=2.1.2" },
     { name = "opencv-python", specifier = ">=4.11.0.86" },
     { name = "speechrecognition", specifier = ">=3.14.1" },
+    { name = "tqdm", specifier = ">=4.67.1" },
 ]
 
 [package.metadata.requires-dev]
