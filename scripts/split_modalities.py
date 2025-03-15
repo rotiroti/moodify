@@ -4,12 +4,13 @@ import argparse
 from pathlib import Path
 
 import cv2
-import speech_recognition as sr
+import torchaudio
 from moviepy import VideoFileClip
 from tqdm import tqdm
+from transformers import pipeline
 
 
-def extract_audio_from_video(src_path: Path, dst_dir: Path) -> Path:
+def extract_audio(src_path: Path, dst_dir: Path) -> Path:
     """Extract audio from a video file and save it as a WAV file.
 
     Args:
@@ -28,27 +29,29 @@ def extract_audio_from_video(src_path: Path, dst_dir: Path) -> Path:
     return dst_path
 
 
-def extract_text(src_path, dst_dir: Path):
-    """Extract text from an audio file using Google Speech Recognition.
+def extract_text(src_path: Path, asr_pipeline: pipeline, dst_dir: Path):
+    """Extract text from an audio file using wav2vec2 Hugging Face pipeline.
 
     Args:
         src_path: Path to the input audio file.
         dst_dir: Path to the output directory where the transcript will be saved.
     """
-    recognizer = sr.Recognizer()
-    transcript = None
+    # Load the audio file
+    waveform, sample_rate = torchaudio.load(str(src_path))
 
-    with sr.AudioFile(str(src_path)) as src:
-        audio = recognizer.record(src)
-    try:
-        transcript = recognizer.recognize_google(audio)
-        print(f"Transcript: {transcript}")
-    except sr.UnknownValueError:
-        print("Could not understand the audio")
-    except sr.RequestError:
-        print("Could not request results from the speech recognition service")
+    # Convert to mono if stereo
+    if waveform.shape[0] > 1:
+        waveform = waveform.mean(dim=0)
+
+    # Resample to 16kHz (required by Wav2Vec2)
+    if sample_rate != 16000:
+        waveform = torchaudio.functional.resample(waveform, sample_rate, 16000)
+
+    waveform = waveform.numpy().squeeze()
+    transcript = asr_pipeline({"sampling_rate": 16000, "raw": waveform})["text"]
 
     if transcript:
+        transcript = transcript.lower()
         dst_path = dst_dir / src_path.with_suffix(".txt").name
         with open(dst_path, "w", encoding="utf-8") as f:
             f.write(transcript)
@@ -56,7 +59,7 @@ def extract_text(src_path, dst_dir: Path):
         print(f"Transcript saved to {dst_path}")
 
 
-def extract_frames(src_path, dst_dir: Path, fps: int = 5):
+def extract_frames(src_path: Path, dst_dir: Path, fps: int = 5):
     """Extract frames from a video file at a given frame rate.
 
     Args:
@@ -88,7 +91,7 @@ def extract_frames(src_path, dst_dir: Path, fps: int = 5):
     print(f"Extracted {frame_count} frames")
 
 
-def split_modalities(src_path: Path, dst_dir: Path, fps: int = 5):
+def split_modalities(src_path: Path, asr_pipeline: pipeline, dst_dir: Path, fps: int = 5):
     """Split a video file into its modalities: audio, text, and frames.
 
     Args:
@@ -100,8 +103,8 @@ def split_modalities(src_path: Path, dst_dir: Path, fps: int = 5):
     video_dst = dst_dir / src_path.stem
     video_dst.mkdir(parents=True, exist_ok=True)
 
-    audio_path = extract_audio_from_video(src_path, video_dst)
-    extract_text(audio_path, video_dst)
+    audio_path = extract_audio(src_path, video_dst)
+    extract_text(audio_path, asr_pipeline, video_dst)
     extract_frames(src_path, video_dst, fps)
 
 
@@ -114,11 +117,14 @@ def run() -> None:
 
     args.dst.mkdir(parents=True, exist_ok=True)
 
+    # Instantiate wav2vec2
+    wav2vec2 = pipeline("automatic-speech-recognition", model="facebook/wav2vec2-large-960h")
+
     if args.src.is_dir():
         for video_file in tqdm(list(args.src.glob("*.mp4")), desc="Processing Videos", unit="video"):
-            split_modalities(video_file, args.dst, args.fps)
+            split_modalities(video_file, wav2vec2, args.dst, args.fps)
     else:
-        split_modalities(args.src, args.dst, args.fps)
+        split_modalities(args.src, wav2vec2, args.dst, args.fps)
 
 
 if __name__ == "__main__":
