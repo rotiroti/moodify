@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "ffmpeg>=1.4",
+    "librosa>=0.11.0",
+    "matplotlib>=3.10.1",
     "moviepy>=2.1.2",
     "opencv-python>=4.11.0.86",
     "soundfile>=0.13.1",
@@ -18,7 +20,10 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "ipyfilechooser>=0.6.0",
     "ipykernel>=6.29.5",
+    "ipywidgets>=8.1.5",
+    "nbqa[toolchain]>=1.9.1",
     "ruff>=0.9.10",
 ]
 
