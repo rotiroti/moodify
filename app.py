@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 
+import json
+from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 
 import gradio as gr
 import librosa
 import numpy as np
+import pandas as pd
 from transformers import pipeline
 
 LOGFILE = "moodify.csv"
@@ -126,6 +129,85 @@ def _preprocess_audio(inp: Tuple[int, np.ndarray]) -> Dict[str, Any]:
     return {"sampling_rate": sr, "raw": y}
 
 
+def _parse_confidence_file():
+    confidence_dir = Path(".gradio/flagged")
+
+    if not confidence_dir.exists():
+        return None
+
+    confidence_file = confidence_dir / LOGFILE
+    df = pd.read_csv(confidence_file)
+
+    # Remove invalid entries (rows with `"label": null, "confidences": null"`)
+    df = df[~df["output"].str.contains('"label": null', na=False)]
+
+    # Identify modality based on 'inp' column
+    # TODO: Review valid extensions for each speech modality
+    df["modality"] = df["inp"].apply(
+        lambda x: (
+            "Speech"
+            if isinstance(x, str) and x.endswith(".wav")
+            else "Face"
+            if isinstance(x, str) and x.endswith((".jpg", ".png"))
+            else "Text"
+        )
+    )
+
+    # Keep only the last occurrence of each modality
+    df = df.groupby("modality").last().reset_index()
+
+    results = {}
+
+    for _, row in df.iterrows():
+        parsed_json = json.loads(row["output"].replace('""', '"'))
+        results[row["modality"]] = {
+            "emotion": parsed_json["label"],
+            "scores": {
+                entry["label"]: float(entry["confidence"])
+                for entry in parsed_json["confidences"]
+            },
+            "timestamp": row["timestamp"],
+        }
+
+    return results
+
+
+def _compute_scores_matrix(confidence_file):
+    # Find the first available modality to get emotion labels
+    for modality in ["Face", "Speech", "Text"]:
+        if modality in confidence_file:
+            emotion_labels = list(confidence_file[modality]["scores"].keys())
+            break
+    else:
+        raise ValueError("No valid modality found in confidence file.")
+
+    scores_matrix = np.array(
+        [list(mod["scores"].values()) for mod in confidence_file.values()]
+    )
+
+    return scores_matrix, emotion_labels
+
+
+def _average_fusion(confidence_file):
+    scores_matrix, emotion_labels = _compute_scores_matrix(confidence_file)
+
+    # Normalize scores before averaging
+    scores_matrix = scores_matrix / scores_matrix.sum(axis=1, keepdims=True)
+    avg_scores = np.mean(scores_matrix, axis=0)
+    top_emotion = emotion_labels[np.argmax(avg_scores)]
+
+    return top_emotion, dict(zip(emotion_labels, avg_scores))
+
+
+def generate_playlist():
+    confidence_file = _parse_confidence_file()
+    if confidence_file is None:
+        return "No data available"
+
+    top_emotion, avg_scores = _average_fusion(confidence_file)
+
+    return avg_scores
+
 def ser_predict(inp: Tuple[int, np.ndarray]) -> Dict[str, float]:
     preprocessed = _preprocess_audio(inp)
     raw_predictions = ser_pipeline(preprocessed)
@@ -178,12 +260,19 @@ fer_tab = gr.Interface(
     ),
 )
 
+playlist_tab = gr.Interface(
+    fn=generate_playlist,
+    inputs=[],
+    outputs=gr.Label(),
+    flagging_mode="never",
+)
+
 demo = gr.Blocks(theme=gr.themes.Ocean())
 
 with demo:
     gr.TabbedInterface(
-        [ser_tab, ter_tab, fer_tab],
-        tab_names=["Speech", "Text", "Face"],
+        [ser_tab, ter_tab, fer_tab, playlist_tab],
+        tab_names=["Speech", "Text", "Face", "Generate Playlist"],
         title="Moodify",
     )
 
