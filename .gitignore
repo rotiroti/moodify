@@ -17,7 +17,7 @@ wheels/
 
 # Gradio
 .gradio
+.cache
 
-# Environment
-.env
-.env.example
+# Configurations
+config.json

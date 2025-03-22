@@ -1,0 +1,59 @@
+{
+    "assets": {
+        "joy": "./assets/joy.gif",
+        "disgust": "./assets/disgust.gif",
+        "fear": "./assets/fear.gif",
+        "anger": "./assets/anger.gif",
+        "sadness": "./assets/sadness.gif"
+    },
+    "labels": [
+        "anger",
+        "disgust",
+        "fear",
+        "joy",
+        "sadness"
+    ],
+    "logfile": "moodify.csv",
+    "pipelines": {
+        "ser": {
+            "task": "audio-classification",
+            "model": "firdhokk/speech-emotion-recognition-with-openai-whisper-large-v3",
+            "mapping": {
+                "angry": "anger",
+                "disgust": "disgust",
+                "fearful": "fear",
+                "happy": "joy",
+                "sad": "sadness"
+            }
+        },
+        "ter": {
+            "task": "text-classification",
+            "model": "michellejieli/emotion_text_classifier",
+            "mapping": {
+                "anger": "anger",
+                "disgust": "disgust",
+                "fear": "fear",
+                "joy": "joy",
+                "sadness": "sadness"
+            }
+        },
+        "fer": {
+            "task": "image-classification",
+            "model": "dima806/facial_emotions_image_detection",
+            "mapping": {
+                "angry": "anger",
+                "disgust": "disgust",
+                "fear": "fear",
+                "happy": "joy",
+                "sad": "sadness"
+            }
+        }
+    },
+    "services": {
+        "spotify": {
+            "client_id": "...",
+            "client_secret": "...",
+            "redirect_uri": "http://127.0.0.1:7860/callback"
+        }
+    }
+}
