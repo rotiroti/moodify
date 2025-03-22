@@ -22,7 +22,9 @@ def extract_audio(src_path: Path, dst_dir: Path) -> Path:
     """
     clip = VideoFileClip(src_path)
     dst_path = dst_dir / src_path.with_suffix(".wav").name
-    clip.audio.write_audiofile(dst_path, codec="pcm_s16le", fps=48000, ffmpeg_params=["-ac", "1"])
+    clip.audio.write_audiofile(
+        dst_path, codec="pcm_s16le", fps=48000, ffmpeg_params=["-ac", "1"]
+    )
 
     print(f"Audio saved to {dst_path}")
 
@@ -91,7 +93,9 @@ def extract_frames(src_path: Path, dst_dir: Path, fps: int = 5):
     print(f"Extracted {frame_count} frames")
 
 
-def split_modalities(src_path: Path, asr_pipeline: pipeline, dst_dir: Path, fps: int = 5):
+def split_modalities(
+    src_path: Path, asr_pipeline: pipeline, dst_dir: Path, fps: int = 5
+):
     """Split a video file into its modalities: audio, text, and frames.
 
     Args:
@@ -112,16 +116,25 @@ def run() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("src", type=Path, help="Path to the input video")
     parser.add_argument("dst", type=Path, help="Path to the output directory")
-    parser.add_argument("--fps", type=int, default=5, help="Number of frames per second to extract from the video")
+    parser.add_argument(
+        "--fps",
+        type=int,
+        default=5,
+        help="Number of frames per second to extract from the video",
+    )
     args = parser.parse_args()
 
     args.dst.mkdir(parents=True, exist_ok=True)
 
     # Instantiate wav2vec2
-    wav2vec2 = pipeline("automatic-speech-recognition", model="facebook/wav2vec2-large-960h")
+    wav2vec2 = pipeline(
+        "automatic-speech-recognition", model="facebook/wav2vec2-large-960h"
+    )
 
     if args.src.is_dir():
-        for video_file in tqdm(list(args.src.glob("*.mp4")), desc="Processing Videos", unit="video"):
+        for video_file in tqdm(
+            list(args.src.glob("*.mp4")), desc="Processing Videos", unit="video"
+        ):
             split_modalities(video_file, wav2vec2, args.dst, args.fps)
     else:
         split_modalities(args.src, wav2vec2, args.dst, args.fps)
