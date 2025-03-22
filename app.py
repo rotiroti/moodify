@@ -14,53 +14,67 @@ LOGFILE = "moodify.csv"
 TARGET_SAMPLE_RATE = 16000
 EMOTION_LABELS = ["anger", "disgust", "fear", "joy", "sadness"]
 CONFIG = {
-    "ser": {
-        "mapping": {
-            "angry": "anger",
-            "disgust": "disgust",
-            "fearful": "fear",
-            "happy": "joy",
-            "sad": "sadness",
-        },
+    "assets": {
+        "joy": "./assets/joy.gif",
+        "disgust": "./assets/disgust.gif",
+        "fear": "./assets/fear.gif",
+        "anger": "./assets/anger.gif",
+        "sadness": "./assets/sadness.gif",
     },
-    "ter": {
-        "mapping": {
-            "anger": "anger",
-            "disgust": "disgust",
-            "fear": "fear",
-            "joy": "joy",
-            "sadness": "sadness",
+    "pipelines": {
+        "ser": {
+            "task": "audio-classification",
+            "model": "firdhokk/speech-emotion-recognition-with-openai-whisper-large-v3",
+            "mapping": {
+                "angry": "anger",
+                "disgust": "disgust",
+                "fearful": "fear",
+                "happy": "joy",
+                "sad": "sadness",
+            },
         },
-    },
-    "fer": {
-        "mapping": {
-            "angry": "anger",
-            "disgust": "disgust",
-            "fear": "fear",
-            "happy": "joy",
-            "sad": "sadness",
+        "ter": {
+            "task": "text-classification",
+            "model": "michellejieli/emotion_text_classifier",
+            "mapping": {
+                "anger": "anger",
+                "disgust": "disgust",
+                "fear": "fear",
+                "joy": "joy",
+                "sadness": "sadness",
+            },
+        },
+        "fer": {
+            "task": "image-classification",
+            "model": "dima806/facial_emotions_image_detection",
+            "mapping": {
+                "angry": "anger",
+                "disgust": "disgust",
+                "fear": "fear",
+                "happy": "joy",
+                "sad": "sadness",
+            },
         },
     },
 }
 
-# Instantiate the pipelines
 ser_pipeline = pipeline(
-    "audio-classification",
-    model="firdhokk/speech-emotion-recognition-with-openai-whisper-large-v3",
+    CONFIG["pipelines"]["ser"]["task"],
+    model=CONFIG["pipelines"]["ser"]["model"],
     use_fast=True,
     trust_remote_code=True,
 )
 
 ter_pipeline = pipeline(
-    "text-classification",
-    model="michellejieli/emotion_text_classifier",
+    CONFIG["pipelines"]["ter"]["task"],
+    model=CONFIG["pipelines"]["ter"]["model"],
     use_fast=True,
     trust_remote_code=True,
 )
 
 fer_pipeline = pipeline(
-    "image-classification",
-    model="dima806/facial_emotions_image_detection",
+    CONFIG["pipelines"]["fer"]["task"],
+    model=CONFIG["pipelines"]["fer"]["model"],
     use_fast=True,
     trust_remote_code=True,
 )
@@ -106,7 +120,6 @@ def _compute_confidences(
 
 
 def _preprocess_audio(inp: Tuple[int, np.ndarray]) -> Dict[str, Any]:
-    """Preprocess audio input."""
     sr, y = inp
 
     # Mono conversion if stereo
@@ -199,41 +212,49 @@ def _average_fusion(confidence_file):
     return top_emotion, dict(zip(emotion_labels, avg_scores))
 
 
-def generate_playlist():
+def fuse_results():
     confidence_file = _parse_confidence_file()
     if confidence_file is None:
         return "No data available"
 
     top_emotion, avg_scores = _average_fusion(confidence_file)
+    image_path = CONFIG["assets"].get(top_emotion, None)
 
-    return avg_scores
+    return avg_scores, image_path
 
-def ser_predict(inp: Tuple[int, np.ndarray]) -> Dict[str, float]:
+
+def ser_predict(inp):
     preprocessed = _preprocess_audio(inp)
     raw_predictions = ser_pipeline(preprocessed)
-    confidences = _compute_confidences(raw_predictions, CONFIG["ser"]["mapping"])
+    confidences = _compute_confidences(
+        raw_predictions, CONFIG["pipelines"]["ser"]["mapping"]
+    )
 
     return confidences
 
 
-def ter_predict(inp: str) -> Dict[str, float]:
+def ter_predict(inp):
     raw_predictions = ter_pipeline(inp, top_k=None)
-    confidences = _compute_confidences(raw_predictions, CONFIG["ter"]["mapping"])
+    confidences = _compute_confidences(
+        raw_predictions, CONFIG["pipelines"]["ter"]["mapping"]
+    )
 
     return confidences
 
 
-def fer_predict(inp: Any) -> Dict[str, float]:
+def fer_predict(inp):
     raw_predictions = fer_pipeline(inp)
-    confidences = _compute_confidences(raw_predictions, CONFIG["fer"]["mapping"])
+    confidences = _compute_confidences(
+        raw_predictions, CONFIG["pipelines"]["fer"]["mapping"]
+    )
 
     return confidences
 
 
 ser_tab = gr.Interface(
     fn=ser_predict,
-    inputs=gr.Audio(type="numpy", format="wav"),
-    outputs=gr.Label(),
+    inputs=gr.Audio(type="numpy", format="wav", show_label=False),
+    outputs=gr.Label(show_label=False),
     title="Speech Emotion Recognition",
     flagging_callback=gr.CSVLogger(
         dataset_file_name=LOGFILE,
@@ -242,8 +263,8 @@ ser_tab = gr.Interface(
 
 ter_tab = gr.Interface(
     fn=ter_predict,
-    inputs=gr.Textbox(lines=5, label="Enter your text here"),
-    outputs=gr.Label(),
+    inputs=gr.Textbox(lines=10, show_label=False, placeholder="Enter text here"),
+    outputs=gr.Label(show_label=False),
     title="Text-Based Emotion Recognition",
     flagging_callback=gr.CSVLogger(
         dataset_file_name=LOGFILE,
@@ -252,27 +273,35 @@ ter_tab = gr.Interface(
 
 fer_tab = gr.Interface(
     fn=fer_predict,
-    inputs=gr.Image(type="pil"),
-    outputs=gr.Label(),
+    inputs=gr.Image(type="pil", show_label=False),
+    outputs=gr.Label(show_label=False),
     title="Facial Emotion Recognition",
     flagging_callback=gr.CSVLogger(
         dataset_file_name=LOGFILE,
     ),
 )
 
-playlist_tab = gr.Interface(
-    fn=generate_playlist,
-    inputs=[],
-    outputs=gr.Label(),
-    flagging_mode="never",
-)
+playlist_tab = gr.Blocks()
+
+with playlist_tab:
+    with gr.Row():
+        final_emotion = gr.Label(show_label=False)
+        html_image = gr.Image(
+            show_download_button=False,
+            show_fullscreen_button=False,
+            show_share_button=False,
+            show_label=False,
+        )
+    with gr.Row():
+        fuse_button = gr.Button("Fuse Results")
+    fuse_button.click(fn=fuse_results, inputs=[], outputs=[final_emotion, html_image])
 
 demo = gr.Blocks(theme=gr.themes.Ocean())
 
 with demo:
     gr.TabbedInterface(
         [ser_tab, ter_tab, fer_tab, playlist_tab],
-        tab_names=["Speech", "Text", "Face", "Generate Playlist"],
+        tab_names=["Speech", "Text", "Face", "Spotify Playlist"],
         title="Moodify",
     )
 
