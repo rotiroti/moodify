@@ -17,3 +17,7 @@ wheels/
 
 # Gradio
 .gradio
+
+# Environment
+.env
+.env.example

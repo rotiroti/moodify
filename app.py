@@ -8,12 +8,18 @@ import gradio as gr
 import librosa
 import numpy as np
 import pandas as pd
+import spotipy
+from dotenv import dotenv_values
+from spotipy.oauth2 import SpotifyClientCredentials
 from transformers import pipeline
 
 LOGFILE = "moodify.csv"
 TARGET_SAMPLE_RATE = 16000
 EMOTION_LABELS = ["anger", "disgust", "fear", "joy", "sadness"]
 CONFIG = {
+    "services": {
+        "spotify": {},
+    },
     "assets": {
         "joy": "./assets/joy.gif",
         "disgust": "./assets/disgust.gif",
@@ -57,6 +63,7 @@ CONFIG = {
         },
     },
 }
+CONFIG["services"]["spotify"] |= dotenv_values(".env")
 
 ser_pipeline = pipeline(
     CONFIG["pipelines"]["ser"]["task"],
@@ -77,6 +84,14 @@ fer_pipeline = pipeline(
     model=CONFIG["pipelines"]["fer"]["model"],
     use_fast=True,
     trust_remote_code=True,
+)
+
+# Spotify Client Configuration
+spotify_client = spotipy.Spotify(
+    auth_manager=SpotifyClientCredentials(
+        client_id=CONFIG["services"]["spotify"]["SPOTIPY_CLIENT_ID"],
+        client_secret=CONFIG["services"]["spotify"]["SPOTIPY_CLIENT_SECRET"],
+    )
 )
 
 
@@ -212,6 +227,60 @@ def _average_fusion(confidence_file):
     return top_emotion, dict(zip(emotion_labels, avg_scores))
 
 
+def search_playlist(emotion: str):
+    query = emotion.capitalize() + " Mood"
+    response = spotify_client.search(q=query, limit=10, type="playlist")
+
+    if not response or "playlists" not in response:
+        return "<p>No playlists found for this emotion.</p>"
+
+    playlists = response.get("playlists", {}).get("items", [])
+    valid_playlists = [p for p in playlists if p is not None]
+
+    if not valid_playlists:
+        return "<p style='font-size: 1.2em; color: #ff4b4b; text-align: center;'>No playlists available.</p>"
+
+    html_content = """
+    <div class="playlist-container">
+        <h3 class="playlist-title">Suggested Playlists</h3>
+        <div class="playlist-grid">
+    """
+
+    for playlist in valid_playlists:
+        image_url = (
+            playlist["images"][0]["url"]
+            if playlist["images"]
+            else "https://via.placeholder.com/300"
+        )
+        name = playlist["name"]
+        playlist_url = playlist["external_urls"]["spotify"]
+        track_count = playlist["tracks"]["total"]
+        track_text = "1 track" if track_count == 1 else f"{track_count} tracks"
+
+        html_content += f"""
+        <div class="playlist-card">
+            <div class="playlist-img-container">
+                <img class="playlist-img" src="{image_url}" alt="{name}">
+                <a href="{playlist_url}" target="_blank" class="play-button">
+                    <div class="play-icon"></div>
+                </a>
+            </div>
+            <div class="playlist-name">{name}</div>
+            <div class="playlist-tracks">{track_text}</div>
+            <a href="{playlist_url}" target="_blank" class="spotify-link">
+                <span class="spotify-icon">🎵</span> Open in Spotify
+            </a>
+        </div>
+        """
+
+    html_content += """
+        </div>
+    </div>
+    """
+
+    return html_content
+
+
 def fuse_results():
     confidence_file = _parse_confidence_file()
     if confidence_file is None:
@@ -219,8 +288,13 @@ def fuse_results():
 
     top_emotion, avg_scores = _average_fusion(confidence_file)
     image_path = CONFIG["assets"].get(top_emotion, None)
+    playlist_html = search_playlist(top_emotion)
 
-    return avg_scores, image_path
+    return (
+        gr.update(value=avg_scores, visible=True),
+        gr.update(value=image_path, visible=True),
+        gr.update(value=playlist_html, visible=True),
+    )
 
 
 def ser_predict(inp):
@@ -230,7 +304,7 @@ def ser_predict(inp):
         raw_predictions, CONFIG["pipelines"]["ser"]["mapping"]
     )
 
-    return confidences
+    return gr.update(value=confidences, visible=True)
 
 
 def ter_predict(inp):
@@ -239,7 +313,7 @@ def ter_predict(inp):
         raw_predictions, CONFIG["pipelines"]["ter"]["mapping"]
     )
 
-    return confidences
+    return gr.update(value=confidences, visible=True)
 
 
 def fer_predict(inp):
@@ -248,14 +322,15 @@ def fer_predict(inp):
         raw_predictions, CONFIG["pipelines"]["fer"]["mapping"]
     )
 
-    return confidences
+    return gr.update(value=confidences, visible=True)
 
 
 ser_tab = gr.Interface(
     fn=ser_predict,
     inputs=gr.Audio(type="numpy", format="wav", show_label=False),
-    outputs=gr.Label(show_label=False),
+    outputs=gr.Label(show_label=False, visible=False),
     title="Speech Emotion Recognition",
+    flagging_mode="auto",
     flagging_callback=gr.CSVLogger(
         dataset_file_name=LOGFILE,
     ),
@@ -264,18 +339,38 @@ ser_tab = gr.Interface(
 ter_tab = gr.Interface(
     fn=ter_predict,
     inputs=gr.Textbox(lines=10, show_label=False, placeholder="Enter text here"),
-    outputs=gr.Label(show_label=False),
+    outputs=gr.Label(show_label=False, visible=False),
     title="Text-Based Emotion Recognition",
+    flagging_mode="auto",
     flagging_callback=gr.CSVLogger(
         dataset_file_name=LOGFILE,
     ),
+    examples_per_page=25,
+    examples=[
+        "Non sopporto quando le persone non rispettano le regole!",
+        "I can't stand it when people don't follow the rules!",
+        "¡No soporto cuando la gente no respeta las reglas!",
+        "L'odore di cibo avariato mi fa venire la nausea.",
+        "The smell of rotten food makes me feel sick.",
+        "El olor a comida podrida me da náuseas.",
+        "Camminare da solo nel buio mi mette davvero a disagio.",
+        "Walking alone in the dark really makes me uneasy.",
+        "Caminar solo en la oscuridad realmente me pone nervioso.",
+        "Adoro suonare la chitarra, mi fa sentire libero e felice!",
+        "I love playing the guitar, it makes me feel free and happy!",
+        "¡Me encanta tocar la guitarra, me hace sentir libre y feliz!",
+        "Da quando te ne sei andato, la casa sembra vuota e silenziosa.",
+        "Since you left, the house feels empty and quiet.",
+        "Desde que te fuiste, la casa se siente vacía y silenciosa.",
+    ],
 )
 
 fer_tab = gr.Interface(
     fn=fer_predict,
     inputs=gr.Image(type="pil", show_label=False),
-    outputs=gr.Label(show_label=False),
+    outputs=gr.Label(show_label=False, visible=False),
     title="Facial Emotion Recognition",
+    flagging_mode="auto",
     flagging_callback=gr.CSVLogger(
         dataset_file_name=LOGFILE,
     ),
@@ -285,23 +380,191 @@ playlist_tab = gr.Blocks()
 
 with playlist_tab:
     with gr.Row():
-        final_emotion = gr.Label(show_label=False)
+        fuse_button = gr.Button("Merge Modalities")
+    with gr.Row():
+        final_emotion = gr.Label(show_label=False, visible=False)
         html_image = gr.Image(
             show_download_button=False,
             show_fullscreen_button=False,
             show_share_button=False,
             show_label=False,
+            visible=False,
         )
     with gr.Row():
-        fuse_button = gr.Button("Fuse Results")
-    fuse_button.click(fn=fuse_results, inputs=[], outputs=[final_emotion, html_image])
+        spotify_playlist = gr.HTML(visible=False)
+    fuse_button.click(
+        fn=fuse_results,
+        inputs=[],
+        outputs=[final_emotion, html_image, spotify_playlist],
+    )
 
-demo = gr.Blocks(theme=gr.themes.Ocean())
+css = """
+:root {
+    --spotify-green: #1DB954;
+    --spotify-green-dark: #17A74B;
+    --spotify-black: #121212;
+    --spotify-dark-gray: #212121;
+    --spotify-light-gray: #B3B3B3;
+    --card-bg-light: #ffffff;
+    --card-bg-dark: #181818;
+    --text-primary-light: #000000;
+    --text-primary-dark: #ffffff;
+    --text-secondary-light: #6a6a6a;
+    --text-secondary-dark: #a7a7a7;
+    --hover-light: #f7f7f7;
+    --hover-dark: #282828;
+}
+
+.gradio-container.dark {
+    --card-bg: var(--card-bg-dark);
+    --text-primary: var(--text-primary-dark);
+    --text-secondary: var(--text-secondary-dark);
+    --hover-bg: var(--hover-dark);
+}
+
+.gradio-container:not(.dark) {
+    --card-bg: var(--card-bg-light);
+    --text-primary: var(--text-primary-light);
+    --text-secondary: var(--text-secondary-light);
+    --hover-bg: var(--hover-light);
+}
+
+.playlist-container {
+    font-family: 'Circular', 'Gotham', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    max-width: 100%;
+    margin: 0 auto;
+    color: var(--text-primary);
+}
+
+.playlist-title {
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 24px;
+    color: var(--text-primary);
+    text-align: center;
+}
+
+.playlist-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 24px;
+    margin-top: 20px;
+    width: 100%;
+}
+
+.playlist-card {
+    background-color: var(--card-bg);
+    border-radius: 8px;
+    padding: 16px;
+    transition: background-color 0.3s ease;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+.playlist-card:hover {
+    background-color: var(--hover-bg);
+    transform: translateY(-4px);
+}
+
+.playlist-img-container {
+    position: relative;
+    width: 100%;
+    margin-bottom: 16px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.playlist-img {
+    width: 100%;
+    aspect-ratio: 1/1;
+    border-radius: 8px;
+    object-fit: cover;
+}
+
+.play-button {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background-color: var(--spotify-green);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: all 0.3s ease;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+}
+
+.playlist-card:hover .play-button {
+    opacity: 1;
+    transform: translateY(-4px);
+}
+
+.play-icon {
+    width: 0;
+    height: 0;
+    border-top: 8px solid transparent;
+    border-bottom: 8px solid transparent;
+    border-left: 12px solid white;
+    margin-left: 3px;
+}
+
+.playlist-name {
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-primary);
+}
+
+.playlist-tracks {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+}
+
+.spotify-link {
+    color: var(--spotify-green);
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    transition: color 0.2s ease;
+}
+
+.spotify-link:hover {
+    color: var(--spotify-green-dark);
+}
+
+.spotify-icon {
+    display: inline-block;
+    margin-right: 4px;
+    font-size: 1.2em;
+}
+
+@media (max-width: 768px) {
+    .playlist-grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 16px;
+    }
+}
+
+footer {
+    display: none !important;
+}
+"""
+
+
+demo = gr.Blocks(theme=gr.themes.Ocean(), css=css)
 
 with demo:
     gr.TabbedInterface(
         [ser_tab, ter_tab, fer_tab, playlist_tab],
-        tab_names=["Speech", "Text", "Face", "Spotify Playlist"],
+        tab_names=["Speech", "Text", "Facial", "Spotify Playlist"],
         title="Moodify",
     )
 
