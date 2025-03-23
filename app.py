@@ -1,51 +1,57 @@
 #!/usr/bin/env python3
 
+import os
 import json
 from pathlib import Path
 
 import gradio as gr
 import librosa
-import numpy as np
 import pandas as pd
-import spotipy
-from spotipy.oauth2 import SpotifyClientCredentials
-from transformers import pipeline
 
-from constants import stylesheet, text_examples
+# Disable tokenizer parallelism
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 TARGET_SAMPLE_RATE = 16000
 
-with open("config.json", "r") as config_file:
-    config = json.load(config_file)
+if gr.NO_RELOAD:
+    import numpy as np
+    import spotipy
+    from spotipy.oauth2 import SpotifyClientCredentials
+    from transformers import pipeline
 
-ser_pipeline = pipeline(
-    config["pipelines"]["ser"]["task"],
-    model=config["pipelines"]["ser"]["model"],
-    use_fast=True,
-    trust_remote_code=True,
-)
+    from constants import stylesheet, text_examples
 
-ter_pipeline = pipeline(
-    config["pipelines"]["ter"]["task"],
-    model=config["pipelines"]["ter"]["model"],
-    use_fast=True,
-    trust_remote_code=True,
-)
+    with open("config.json") as config_file:
+        config = json.load(config_file)
 
-fer_pipeline = pipeline(
-    config["pipelines"]["fer"]["task"],
-    model=config["pipelines"]["fer"]["model"],
-    use_fast=True,
-    trust_remote_code=True,
-)
-
-# Spotify Client Configuration
-spotify_client = spotipy.Spotify(
-    auth_manager=SpotifyClientCredentials(
-        client_id=config["services"]["spotify"]["client_id"],
-        client_secret=config["services"]["spotify"]["client_secret"],
+    ser_pipeline = pipeline(
+        config["pipelines"]["ser"]["task"],
+        model=config["pipelines"]["ser"]["model"],
+        use_fast=True,
+        trust_remote_code=True,
     )
-)
+
+    ter_pipeline = pipeline(
+        config["pipelines"]["ter"]["task"],
+        model=config["pipelines"]["ter"]["model"],
+        use_fast=True,
+        trust_remote_code=True,
+    )
+
+    fer_pipeline = pipeline(
+        config["pipelines"]["fer"]["task"],
+        model=config["pipelines"]["fer"]["model"],
+        use_fast=True,
+        trust_remote_code=True,
+    )
+
+    # Spotify Client Configuration
+    spotify_client = spotipy.Spotify(
+        auth_manager=SpotifyClientCredentials(
+            client_id=config["services"]["spotify"]["client_id"],
+            client_secret=config["services"]["spotify"]["client_secret"],
+        )
+    )
 
 
 def _prediction_to_dict(predictions):
@@ -123,9 +129,11 @@ def _parse_confidence_file():
         lambda x: (
             "Speech"
             if isinstance(x, str) and x.endswith(".wav")
-            else "Face"
-            if isinstance(x, str) and x.endswith((".jpg", ".png"))
-            else "Text"
+            else (
+                "Face"
+                if isinstance(x, str) and x.endswith((".jpg", ".png"))
+                else "Text"
+            )
         )
     )
 
@@ -172,7 +180,7 @@ def _average_fusion(confidence_file):
     avg_scores = np.mean(scores_matrix, axis=0)
     top_emotion = emotion_labels[np.argmax(avg_scores)]
 
-    return top_emotion, dict(zip(emotion_labels, avg_scores))
+    return top_emotion, dict(zip(emotion_labels, avg_scores, strict=False))
 
 
 def search_playlist(emotion: str):
