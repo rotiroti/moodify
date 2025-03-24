@@ -123,7 +123,7 @@ def fuse_results(strategy_name):
 
     if not latest_predictions:
         return (
-            gr.update(value="No predictions available", visible=True),
+            gr.update(value="No predictions yet. Please use Speech, Text, or Facial tabs to detect emotions first.", visible=True),
             gr.update(visible=False),
             gr.update(visible=False),
         )
@@ -235,7 +235,7 @@ with playlist_tab:
             info="Select fusion method: Average (equal importance) or Weighted (Face: 0.5, Speech: 0.3, Text: 0.2)",
         )
     with gr.Row():
-        fuse_button = gr.Button("Discover Your Mood")
+        fuse_button = gr.Button("Find My Playlist")
     with gr.Row():
         final_emotion = gr.Label(show_label=False, visible=False)
         html_image = gr.Image(
@@ -253,13 +253,17 @@ with playlist_tab:
         outputs=[final_emotion, html_image, spotify_playlist],
     )
 
-demo = gr.Blocks(theme=gr.themes.Citrus(), css=stylesheet)
+demo = gr.Blocks(
+    theme=gr.themes.Citrus(font=[gr.themes.GoogleFont("Inconsolata"), "Arial", "sans-serif"]),
+    css=stylesheet,
+    title="🎭 Moodify | Feel It, Play It",
+    )
 
 with demo:
     gr.TabbedInterface(
         [ser_tab, ter_tab, fer_tab, playlist_tab],
         tab_names=["Speech", "Text", "Facial", "Spotify Playlist"],
-        title="Moodify",
+        title="🗣️ 📝 😊 Moodify 📊 🎵 🎧"
     )
 
 if __name__ == "__main__":
