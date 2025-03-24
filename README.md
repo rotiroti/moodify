@@ -82,6 +82,30 @@
     http://localhost:7860
     ```
 
+## Models
+
+This project uses the following pre-trained models for emotion recognition:
+
+### Speech Emotion Recognition
+
+- **Model**: [Speech Emotion Recognition with OpenAI Whisper Large v3](https://huggingface.co/firdhokk/speech-emotion-recognition-with-openai-whisper-large-v3)
+- **Architecture**: OpenAI Whisper Large v3
+- **Reference**: [Radford et al. (2022) - Robust Speech Recognition via Large-Scale Weak Supervision](https://cdn.openai.com/papers/whisper.pdf)
+
+### Text Emotion Recognition
+
+- **Model**: [Emotion English DistilRoBERTa-base](https://huggingface.co/j-hartmann/emotion-english-distilroberta-base/)
+- **Architecture**: DistilRoBERTa-base
+- **References**: [Sanh, V., Debut, L., Chaumond, J., & Wolf, T. (2019). DistilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter.](https://arxiv.org/abs/1910.01108)
+
+### Facial Emotion Recognition
+
+- **Model**: [Facial Emotions Image Detection](https://huggingface.co/dima806/facial_emotions_image_detection)
+- **Architecture**: Vision Transformer (ViT)
+- **Reference**: [Dosovitskiy et al. (2021) - An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale](https://arxiv.org/abs/2010.11929)
+
+Each model was chosen for its performance and compatibility with our emotion categories. The models are accessed through the Hugging Face Transformers library.
+
 ## License
 
 The Moodify project is licensed under the terms of the MIT license.

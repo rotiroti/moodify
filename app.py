@@ -123,7 +123,10 @@ def fuse_results(strategy_name):
 
     if not latest_predictions:
         return (
-            gr.update(value="No predictions yet. Please use Speech, Text, or Facial tabs to detect emotions first.", visible=True),
+            gr.update(
+                value="No predictions yet. Please use Speech, Text, or Facial tabs to detect emotions first.",
+                visible=True,
+            ),
             gr.update(visible=False),
             gr.update(visible=False),
         )
@@ -254,16 +257,18 @@ with playlist_tab:
     )
 
 demo = gr.Blocks(
-    theme=gr.themes.Citrus(font=[gr.themes.GoogleFont("Inconsolata"), "Arial", "sans-serif"]),
+    theme=gr.themes.Citrus(
+        font=[gr.themes.GoogleFont("Inconsolata"), "Arial", "sans-serif"]
+    ),
     css=stylesheet,
     title="🎭 Moodify | Feel It, Play It",
-    )
+)
 
 with demo:
     gr.TabbedInterface(
         [ser_tab, ter_tab, fer_tab, playlist_tab],
         tab_names=["Speech", "Text", "Facial", "Spotify Playlist"],
-        title="🗣️ 📝 😊 Moodify 📊 🎵 🎧"
+        title="🗣️ 📝 😊 Moodify 📊 🎵 🎧",
     )
 
 if __name__ == "__main__":
