@@ -21,3 +21,7 @@ wheels/
 
 # Configurations
 config.json
+
+# IDE
+.idea
+.vscode
