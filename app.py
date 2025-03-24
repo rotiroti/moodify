@@ -49,11 +49,11 @@ spotify_client = spotipy.Spotify(
 )
 
 # Global state to store predictions
-EMOTION_STATE = {"Speech": [], "Text": [], "Facial": []}
+EMOTION_STATE = {"Speech": [], "Text": [], "Face": []}
 
 fusion_strategies = {
     "Average": AverageFusion(),
-    "Weighted": WeightedFusion({"Speech": 0.3, "Text": 0.2, "Facial": 0.5}),
+    "Weighted": WeightedFusion({"Speech": 0.3, "Text": 0.2, "Face": 0.5}),
 }
 
 
@@ -124,7 +124,7 @@ def fuse_results(strategy_name):
     if not latest_predictions:
         return (
             gr.update(
-                value="No predictions yet. Please use Speech, Text, or Facial tabs to detect emotions first.",
+                value="No predictions yet. Please use Speech, Text, or Face tabs to detect emotions first.",
                 visible=True,
             ),
             gr.update(visible=False),
@@ -157,6 +157,11 @@ def get_confidences(prediction, labels):
 
 
 def ser_predict(inp):
+    if inp is None:
+        raise gr.Error(
+            "No audio detected! Please record your voice or upload an audio file."
+        )
+
     sr, y = inp
 
     # Mono conversion if stereo
@@ -186,6 +191,10 @@ def ser_predict(inp):
 
 
 def ter_predict(inp):
+    if not inp or inp.strip() == "":
+        raise gr.Error(
+            "Empty text! Please write something or choose from the examples below."
+        )
     prediction = ter_pipeline(inp, top_k=None)
     confidences = get_confidences(prediction, config["pipelines"]["ter"]["mapping"])
     EMOTION_STATE["Text"].append({"scores": confidences, "timestamp": datetime.now()})
@@ -194,12 +203,54 @@ def ter_predict(inp):
 
 
 def fer_predict(inp):
+    if inp is None:
+        raise gr.Error(
+            "No image detected! Please take a photo or upload an image showing a face."
+        )
+
     prediction = fer_pipeline(inp, top_k=None)
     confidences = get_confidences(prediction, config["pipelines"]["fer"]["mapping"])
-    EMOTION_STATE["Facial"].append({"scores": confidences, "timestamp": datetime.now()})
+    EMOTION_STATE["Face"].append({"scores": confidences, "timestamp": datetime.now()})
 
     return confidences
 
+
+home_tab = gr.Blocks()
+
+with home_tab:
+    gr.Markdown(
+        """
+    # 🎵 Welcome to Moodify! 🎭
+
+    **Moodify** is a multimodal emotion recognition system that analyzes emotions from **Speech, Text, and Facial Expressions** and suggests **personalized Spotify playlists** based on the detected mood!
+
+    ## **🎯 How It Works**
+    Moodify combines the power of **deep learning** to recognize emotions from different modalities:
+
+    ### **1. Choose an Input Method**
+    - 🎙️ **Speech Emotion Recognition (SER)** → Record or upload an audio file, analyzed using **OpenAI Whisper**
+    - 📝 **Text Emotion Recognition (TER)** → Enter a sentence or choose from pre-written examples in **English**, analyzed using **DistilRoBERTa**
+    - 😊 **Face Emotion Recognition (FER)** → Capture a photo or upload an image, analyzed using **Vision Transformer (ViT)**
+
+    ### **2. Get Individual Predictions**
+    - Each tab (**Speech, Text, Face**) provides an independent emotion prediction
+    - Predictions are **automatically stored** for fusion
+
+    ### **3. Generate a Spotify Playlist**
+    - Navigate to the **"Spotify Playlist"** tab
+    - Choose a **fusion strategy** to combine multiple emotion predictions:
+        - **Averaging** → Equal weight for all modalities
+        - **Weighted Sum** → Default: Speech (30%), Text (20%), Face (50%)
+    - Click **"Find My Playlist"** to generate **music recommendations** based on detected emotions
+
+    ## **💡 Tips for Best Experience**
+    - Try different modalities to **enhance emotion detection**
+    - Experiment with **fusion strategies** to see how they affect recommendations
+    - Click on a playlist to **open it directly in Spotify** and start listening!
+
+    🚀 **Ready to explore music that reflects emotions? Get started now!** 🎶
+    """
+    )
 
 ser_tab = gr.Interface(
     fn=ser_predict,
@@ -211,11 +262,11 @@ ser_tab = gr.Interface(
 
 ter_tab = gr.Interface(
     fn=ter_predict,
-    inputs=gr.Textbox(lines=10, show_label=False, placeholder="Enter text here"),
+    inputs=gr.Textbox(lines=8, show_label=False, placeholder="Enter text here"),
     outputs=gr.Label(show_label=False),
     title="Text-Based Emotion Recognition",
     flagging_mode="never",
-    examples_per_page=25,
+    examples_per_page=5,
     examples=text_examples,
 )
 
@@ -223,9 +274,23 @@ fer_tab = gr.Interface(
     fn=fer_predict,
     inputs=gr.Image(type="pil", show_label=False),
     outputs=gr.Label(show_label=False),
-    title="Facial Emotion Recognition",
+    title="Face Emotion Recognition",
     flagging_mode="never",
 )
+
+
+def update_weights(speech_w, text_w, face_w):
+    """Update weights for weighted fusion."""
+    total = speech_w + text_w + face_w
+    if total > 0:
+        weights = {
+            "Speech": speech_w / total,
+            "Text": text_w / total,
+            "Face": face_w / total,
+        }
+        fusion_strategies["Weighted"] = WeightedFusion(weights)
+    return f"Current weights - Speech: {speech_w/total:.2f}, Text: {text_w/total:.2f}, Face: {face_w/total:.2f}"
+
 
 playlist_tab = gr.Blocks()
 
@@ -235,8 +300,22 @@ with playlist_tab:
             choices=list(fusion_strategies.keys()),
             value="Average",
             label="Late Fusion Strategy",
-            info="Select fusion method: Average (equal importance) or Weighted (Face: 0.5, Speech: 0.3, Text: 0.2)",
+            info="Select fusion method: Average (equal weights) or Weighted (custom weights)",
         )
+
+    with gr.Column(visible=False) as weight_controls:
+        weight_info = gr.Markdown("Adjust weights for each modality")
+        with gr.Row():
+            speech_weight = gr.Slider(
+                minimum=0, maximum=1, value=0.3, step=0.1, label="Speech Weight"
+            )
+            text_weight = gr.Slider(
+                minimum=0, maximum=1, value=0.2, step=0.1, label="Text Weight"
+            )
+            face_weight = gr.Slider(
+                minimum=0, maximum=1, value=0.5, step=0.1, label="Face Weight"
+            )
+
     with gr.Row():
         fuse_button = gr.Button("Find My Playlist")
     with gr.Row():
@@ -250,11 +329,29 @@ with playlist_tab:
         )
     with gr.Row():
         spotify_playlist = gr.HTML(visible=False)
+
+    # Show/hide weight controls based on strategy selection
+    strategy_selector.change(
+        fn=lambda x: gr.update(visible=(x == "Weighted")),
+        inputs=[strategy_selector],
+        outputs=[weight_controls],
+    )
+
+    # Update weights when sliders change
+    for slider in [speech_weight, text_weight, face_weight]:
+        slider.change(
+            fn=update_weights,
+            inputs=[speech_weight, text_weight, face_weight],
+            outputs=[weight_info],
+        )
+
+    # Fusion button click handler
     fuse_button.click(
         fn=fuse_results,
         inputs=[strategy_selector],
         outputs=[final_emotion, html_image, spotify_playlist],
     )
+
 
 demo = gr.Blocks(
     theme=gr.themes.Citrus(
@@ -266,8 +363,8 @@ demo = gr.Blocks(
 
 with demo:
     gr.TabbedInterface(
-        [ser_tab, ter_tab, fer_tab, playlist_tab],
-        tab_names=["Speech", "Text", "Facial", "Spotify Playlist"],
+        [home_tab, ser_tab, ter_tab, fer_tab, playlist_tab],
+        tab_names=["Home", "Speech", "Text", "Face", "Spotify Playlist"],
         title="🗣️ 📝 😊 Moodify 📊 🎵 🎧",
     )
 

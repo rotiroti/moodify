@@ -145,19 +145,9 @@ footer {
 """
 
 text_examples = [
-    "Non sopporto quando le persone non rispettano le regole!",
     "I can't stand it when people don't follow the rules!",
-    "¡No soporto cuando la gente no respeta las reglas!",
-    "L'odore di cibo avariato mi fa venire la nausea.",
     "The smell of rotten food makes me feel sick.",
-    "El olor a comida podrida me da náuseas.",
-    "Camminare da solo nel buio mi mette davvero a disagio.",
     "Walking alone in the dark really makes me uneasy.",
-    "Caminar solo en la oscuridad realmente me pone nervioso.",
-    "Adoro suonare la chitarra, mi fa sentire libero e felice!",
     "I love playing the guitar, it makes me feel free and happy!",
-    "¡Me encanta tocar la guitarra, me hace sentir libre y feliz!",
-    "Da quando te ne sei andato, la casa sembra vuota e silenziosa.",
     "Since you left, the house feels empty and quiet.",
-    "Desde que te fuiste, la casa se siente vacía y silenciosa.",
 ]

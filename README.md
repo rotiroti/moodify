@@ -98,7 +98,7 @@ This project uses the following pre-trained models for emotion recognition:
 - **Architecture**: DistilRoBERTa-base
 - **References**: [Sanh, V., Debut, L., Chaumond, J., & Wolf, T. (2019). DistilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter.](https://arxiv.org/abs/1910.01108)
 
-### Facial Emotion Recognition
+### Face Emotion Recognition
 
 - **Model**: [Facial Emotions Image Detection](https://huggingface.co/dima806/facial_emotions_image_detection)
 - **Architecture**: Vision Transformer (ViT)
