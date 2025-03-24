@@ -232,7 +232,7 @@ with playlist_tab:
             choices=list(fusion_strategies.keys()),
             value="Average",
             label="Late Fusion Strategy",
-            info="Select fusion method: Average (equal importance) or Weighted (customized importance per modality).",
+            info="Select fusion method: Average (equal importance) or Weighted (Face: 0.5, Speech: 0.3, Text: 0.2)",
         )
     with gr.Row():
         fuse_button = gr.Button("Discover Your Mood")
