@@ -13,9 +13,6 @@ from transformers import pipeline
 from constants import stylesheet, text_examples
 from fusion import AverageFusion, WeightedFusion
 
-# Disable tokenizer parallelism
-# os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
 with open("config.json") as config_file:
     config = json.load(config_file)
 
@@ -59,7 +56,7 @@ fusion_strategies = {
 
 def search_playlist(emotion: str):
     query = emotion.capitalize() + " Mood"
-    response = spotify_client.search(q=query, limit=10, type="playlist")
+    response = spotify_client.search(q=query, limit=25, type="playlist")
 
     if not response or "playlists" not in response:
         return "<p>No playlists found for this emotion.</p>"
@@ -187,7 +184,20 @@ def ser_predict(inp):
     confidences = get_confidences(prediction, config["pipelines"]["ser"]["mapping"])
     EMOTION_STATE["Speech"].append({"scores": confidences, "timestamp": datetime.now()})
 
-    return confidences
+    # Get top emotion for playlist suggestion
+    top_emotion = max(confidences, key=confidences.get)
+    playlist_html = search_playlist(top_emotion)
+
+    return (
+        gr.update(value=confidences, visible=True),
+        gr.update(value=playlist_html, visible=True),
+    )
+
+
+def clear_ser():
+    EMOTION_STATE["Speech"].clear()
+
+    return None, gr.update(value="", visible=False), gr.update(value="", visible=False)
 
 
 def ter_predict(inp):
@@ -199,7 +209,20 @@ def ter_predict(inp):
     confidences = get_confidences(prediction, config["pipelines"]["ter"]["mapping"])
     EMOTION_STATE["Text"].append({"scores": confidences, "timestamp": datetime.now()})
 
-    return confidences
+    # Get top emotion for playlist suggestion
+    top_emotion = max(confidences, key=confidences.get)
+    playlist_html = search_playlist(top_emotion)
+
+    return (
+        gr.update(value=confidences, visible=True),
+        gr.update(value=playlist_html, visible=True),
+    )
+
+
+def clear_ter():
+    EMOTION_STATE["Text"].clear()
+
+    return None, gr.update(value="", visible=False), gr.update(value="", visible=False)
 
 
 def fer_predict(inp):
@@ -212,7 +235,20 @@ def fer_predict(inp):
     confidences = get_confidences(prediction, config["pipelines"]["fer"]["mapping"])
     EMOTION_STATE["Face"].append({"scores": confidences, "timestamp": datetime.now()})
 
-    return confidences
+    # Get top emotion for playlist suggestion
+    top_emotion = max(confidences, key=confidences.get)
+    playlist_html = search_playlist(top_emotion)
+
+    return (
+        gr.update(value=confidences, visible=True),
+        gr.update(value=playlist_html, visible=True),
+    )
+
+
+def clear_fer():
+    EMOTION_STATE["Face"].clear()
+
+    return None, gr.update(value="", visible=False), gr.update(value="", visible=False)
 
 
 home_tab = gr.Blocks()
@@ -225,7 +261,7 @@ with home_tab:
     **Moodify** is a multimodal emotion recognition system that analyzes emotions from **Speech, Text, and Facial Expressions** and suggests **personalized Spotify playlists** based on the detected mood!
 
     ## **🎯 How It Works**
-    Moodify combines the power of **deep learning** to recognize emotions from different modalities:
+    Moodify combines the power of **Deep Learning** to recognize emotions from different modalities:
 
     ### **1. Choose an Input Method**
     - 🎙️ **Speech Emotion Recognition (SER)** → Record or upload an audio file, analyzed using **OpenAI Whisper**
@@ -234,14 +270,14 @@ with home_tab:
 
     ### **2. Get Individual Predictions**
     - Each tab (**Speech, Text, Face**) provides an independent emotion prediction
-    - Predictions are **automatically stored** for fusion
+    - Based on the detected emotion, several **Spotify playlists** are suggested directly in the same tab
 
-    ### **3. Generate a Spotify Playlist**
-    - Navigate to the **"Spotify Playlist"** tab
+    ### **3. Combine Results**
+    - Navigate to the **"Fuse Emotions"**
     - Choose a **fusion strategy** to combine multiple emotion predictions:
         - **Averaging** → Equal weight for all modalities
         - **Weighted Sum** → Default: Speech (30%), Text (20%), Face (50%)
-    - Click **"Find My Playlist"** to generate **music recommendations** based on detected emotions
+    - Click **"Find My Playlist"** to generate **music recommendations** based on the combined emotions
 
     ## **💡 Tips for Best Experience**
     - Try different modalities to **enhance emotion detection**
@@ -252,31 +288,108 @@ with home_tab:
     """
     )
 
-ser_tab = gr.Interface(
-    fn=ser_predict,
-    inputs=gr.Audio(type="numpy", format="wav", show_label=False),
-    outputs=gr.Label(show_label=False),
-    title="Speech Emotion Recognition",
-    flagging_mode="never",
-)
 
-ter_tab = gr.Interface(
-    fn=ter_predict,
-    inputs=gr.Textbox(lines=8, show_label=False, placeholder="Enter text here"),
-    outputs=gr.Label(show_label=False),
-    title="Text-Based Emotion Recognition",
-    flagging_mode="never",
-    examples_per_page=5,
-    examples=text_examples,
-)
+ser_tab = gr.Blocks()
 
-fer_tab = gr.Interface(
-    fn=fer_predict,
-    inputs=gr.Image(type="pil", show_label=False),
-    outputs=gr.Label(show_label=False),
-    title="Face Emotion Recognition",
-    flagging_mode="never",
-)
+with ser_tab:
+    gr.Markdown("### 🎙️ Speech Emotion Recognition")
+
+    with gr.Row():
+        audio_input = gr.Audio(
+            type="numpy", format="wav", show_label=False, label="Upload or Record Audio"
+        )
+
+    with gr.Row():
+        clear_button = gr.Button("Clear", variant="secondary")
+        submit_button = gr.Button("Find My Playlist", variant="primary")
+
+    with gr.Row():
+        final_emotion = gr.Label(show_label=False, visible=False)
+
+    with gr.Row():
+        playlist_html = gr.HTML(visible=False, label="Suggested Playlists")
+
+    # Event handlers
+    submit_button.click(
+        fn=ser_predict,
+        inputs=[audio_input],
+        outputs=[final_emotion, playlist_html],
+    )
+
+    clear_button.click(
+        fn=clear_ser,
+        inputs=[],
+        outputs=[audio_input, final_emotion, playlist_html],
+    )
+
+
+ter_tab = gr.Blocks()
+
+with ter_tab:
+    gr.Markdown("### 📝 Text-Based Emotion Recognition")
+
+    with gr.Row():
+        text_input = gr.Textbox(
+            lines=8, show_label=False, placeholder="Enter text here"
+        )
+        en_examples = gr.Examples(
+            inputs=[text_input], examples=text_examples, examples_per_page=5
+        )
+
+    with gr.Row():
+        clear_button = gr.Button("Clear", variant="secondary")
+        submit_button = gr.Button("Find My Playlist", variant="primary")
+
+    with gr.Row():
+        final_emotion = gr.Label(show_label=False, visible=False)
+
+    with gr.Row():
+        playlist_html = gr.HTML(visible=False, label="Suggested Playlists")
+
+    # Event handlers
+    submit_button.click(
+        fn=ter_predict,
+        inputs=[text_input],
+        outputs=[final_emotion, playlist_html],
+    )
+
+    clear_button.click(
+        fn=clear_ter,
+        inputs=[],
+        outputs=[text_input, final_emotion, playlist_html],
+    )
+
+
+fer_tab = gr.Blocks()
+
+with fer_tab:
+    gr.Markdown("### 😊 Face Emotion Recognition")
+
+    with gr.Row():
+        im_input = gr.Image(type="pil", show_label=False)
+
+    with gr.Row():
+        clear_button = gr.Button("Clear", variant="secondary")
+        submit_button = gr.Button("Find My Playlist", variant="primary")
+
+    with gr.Row():
+        final_emotion = gr.Label(show_label=False, visible=False)
+
+    with gr.Row():
+        playlist_html = gr.HTML(visible=False, label="Suggested Playlists")
+
+    # Event handlers
+    submit_button.click(
+        fn=fer_predict,
+        inputs=[im_input],
+        outputs=[final_emotion, playlist_html],
+    )
+
+    clear_button.click(
+        fn=clear_fer,
+        inputs=[],
+        outputs=[im_input, final_emotion, playlist_html],
+    )
 
 
 def update_weights(speech_w, text_w, face_w):
@@ -292,9 +405,9 @@ def update_weights(speech_w, text_w, face_w):
     return f"Current weights - Speech: {speech_w/total:.2f}, Text: {text_w/total:.2f}, Face: {face_w/total:.2f}"
 
 
-playlist_tab = gr.Blocks()
+fusion_tab = gr.Blocks()
 
-with playlist_tab:
+with fusion_tab:
     with gr.Row():
         strategy_selector = gr.Radio(
             choices=list(fusion_strategies.keys()),
@@ -363,8 +476,8 @@ demo = gr.Blocks(
 
 with demo:
     gr.TabbedInterface(
-        [home_tab, ser_tab, ter_tab, fer_tab, playlist_tab],
-        tab_names=["Home", "Speech", "Text", "Face", "Spotify Playlist"],
+        [home_tab, ser_tab, ter_tab, fer_tab, fusion_tab],
+        tab_names=["Home", "Speech", "Text", "Face", "Fuse Emotions"],
         title="🗣️ 📝 😊 Moodify 📊 🎵 🎧",
     )
 
