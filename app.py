@@ -118,7 +118,8 @@ def fuse_results(strategy_name):
             latest = sorted(EMOTION_STATE[modality], key=lambda x: x["timestamp"])[-1]
             latest_predictions[modality] = latest["scores"]
 
-    if not latest_predictions:
+    # Compute fusion if at least two modalities were used
+    if len(latest_predictions) < 2:
         return (
             gr.update(
                 value="No predictions yet. Please use Speech, Text, or Face tabs to detect emotions first.",
